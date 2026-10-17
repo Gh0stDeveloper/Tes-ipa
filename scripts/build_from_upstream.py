@@ -105,6 +105,20 @@ s = replace_view_body(s, "RepositoryHomeView", '"S4NTOS INJECTOR"')
 s = replace_view_body(s, "RepositoryNewView", 'language.text("tab.new")')
 repository.write_text(s, encoding="utf-8")
 
+# Replace standalone visual labels, but never rename internal 3105 bundle
+# dependencies, patch package extensions, on-disk paths or security identifiers.
+for rel in (
+    "ThreeOneOSFive/ContentView.swift",
+    "ThreeOneOSFive/views/AppDataBrowserView.swift",
+    "ThreeOneOSFive/helpers/DisplayIdentityAttribution.swift",
+):
+    ui = source / rel
+    if ui.is_file():
+        text = ui.read_text(encoding="utf-8")
+        text = text.replace('Text("3105")', 'Text("S4NTOS INJECTOR")')
+        text = text.replace('.navigationTitle("3105")', '.navigationTitle("S4NTOS INJECTOR")')
+        ui.write_text(text, encoding="utf-8")
+
 # Use the icons and splash previously approved and tested by the user.
 for name in ["AppIcon.appiconset", "S4NTOSLaunch.imageset", "S4NTOSBackground.colorset"]:
     src = kit / "Assets.xcassets" / name
@@ -160,6 +174,30 @@ for lang in ("en", "vi", "zh-Hans"):
             text += '\n"' + key + '" = "' + escaped + '";\n'
         elif count != 1:
             raise SystemExit(f"Duplicate Localizable key {key} in {lang}")
+    # Localized presentation prose can mention the upstream app name.
+    # Avoid changing .3105, .3105pass, URLs and machine-readable identifiers.
+    def update_display_string(match):
+        value = re.sub(r"(?<![\\w.])3105(?![\\w./-])", "S4NTOS INJECTOR", match.group(2))
+        return match.group(1) + value + match.group(3)
+    text = re.sub(
+        r'(?m)^(\\s*"[^"]+"\\s*=\\s*")((?:\\\\.|[^"\\\\])*)(";)\\s*
+
+assert 'name: "TikTok"' in settings.read_text()
+assert 'name: "WhatsApp"' in settings.read_text()
+assert 'name: "Discord"' in settings.read_text()
+assert 'name: "Telegram"' in settings.read_text()
+for view, title in (("RepositoryHomeView", '"S4NTOS INJECTOR"'), ("RepositoryNewView", 'language.text("tab.new")')):
+    section = repository.read_text().split(f"struct {view}: View {{", 1)[1]
+    body = section.split("    var body: some View {", 1)[1].split("    private var ", 1)[0]
+    if '.navigationTitle(' + title + ')' not in body:
+        raise SystemExit(f"Missing navigation title in {view}")
+    if "ForEach(" in body or "rebuildFeed()" in body or "rebuildPackages()" in body:
+        raise SystemExit(f"Feed contents still visible in {view}")
+print("S4NTOS source rebranding, contacts, and empty Home/New applied")
+,
+        update_display_string,
+        text,
+    )
     f.write_text(text, encoding="utf-8")
 
 assert 'name: "TikTok"' in settings.read_text()
