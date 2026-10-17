@@ -132,6 +132,16 @@ for name in ["AppIcon.appiconset", "S4NTOSLaunch.imageset", "S4NTOSBackground.co
 obj = plistlib.loads(plist.read_bytes())
 obj["CFBundleDisplayName"] = "S4NTOS INJECTOR"
 obj["CFBundleName"] = "S4NTOS INJECTOR"
+obj["CFBundleShortVersionString"] = "2.2.0"
+obj["CFBundleVersion"] = "2200"
+obj["AppReleaseDisplayVersion"] = "2.2.0 · S4NTOS CUSTOM"
+# Rename user-facing file description; keep existing .3105 format and registered UTIs.
+for entry in obj.get("CFBundleDocumentTypes", []):
+    if entry.get("CFBundleTypeName") == "3105 Patch Package":
+        entry["CFBundleTypeName"] = "S4NTOS INJECTOR Patch Package"
+for entry in obj.get("UTExportedTypeDeclarations", []):
+    if entry.get("UTTypeDescription") == "3105 Patch Package":
+        entry["UTTypeDescription"] = "S4NTOS INJECTOR Patch Package"
 obj["UILaunchScreen"] = {
     "UIImageName": "S4NTOSLaunch",
     "UIColorName": "S4NTOSBackground",
@@ -141,11 +151,15 @@ plist.write_bytes(plistlib.dumps(obj, fmt=plistlib.FMT_XML, sort_keys=False))
 
 p = project.read_text(encoding="utf-8")
 p = p.replace("INFOPLIST_KEY_CFBundleDisplayName = 3105;", 'INFOPLIST_KEY_CFBundleDisplayName = "S4NTOS INJECTOR";')
+p = p.replace("MARKETING_VERSION = 2.0;", "MARKETING_VERSION = 2.2.0;")
+p = p.replace("CURRENT_PROJECT_VERSION = 8;", "CURRENT_PROJECT_VERSION = 2200;")
 # Keep the explicitly tested bundle ID instead of the Apple-reserved upstream ID.
 p = p.replace('PRODUCT_BUNDLE_IDENTIFIER = "com.apple.mobile.MobileHouseArrest";',
               'PRODUCT_BUNDLE_IDENTIFIER = "com.s4ntos.injector";')
 if "PRODUCT_BUNDLE_IDENTIFIER = \"com.s4ntos.injector\";" not in p:
     raise SystemExit("Could not set bundle identifier")
+if "MARKETING_VERSION = 2.2.0;" not in p or "CURRENT_PROJECT_VERSION = 2200;" not in p:
+    raise SystemExit("Could not set new iOS version and build number")
 project.write_text(p, encoding="utf-8")
 
 # Adjust presentation strings only; never rewrite internal .3105 package
