@@ -175,12 +175,15 @@ for lang in ("en", "vi", "zh-Hans"):
         elif count != 1:
             raise SystemExit(f"Duplicate Localizable key {key} in {lang}")
     # Localized presentation prose can mention the upstream app name.
-    # Avoid changing .3105, .3105pass, URLs and machine-readable identifiers.
-    def update_display_string(match):
-        value = re.sub(r"(?<![\\w.])3105(?![\\w./-])", "S4NTOS INJECTOR", match.group(2))
-        return match.group(1) + value + match.group(3)
-    text = re.sub(
-        r'(?m)^(\\s*"[^"]+"\\s*=\\s*")((?:\\\\.|[^"\\\\])*)(";)\\s*
+    # Preserve technical terms such as .3105, 3105pass and filesystem paths.
+    def rewrite_visible_line(line):
+        if not line.lstrip().startswith('"') or ' = "' not in line:
+            return line
+        lhs, sep, rhs = line.partition(' = "')
+        rhs = re.sub(r"(?<![\w.])3105(?![\w./-])", "S4NTOS INJECTOR", rhs)
+        return lhs + sep + rhs
+    text = "\n".join(rewrite_visible_line(line) for line in text.split("\n"))
+    f.write_text(text, encoding="utf-8")
 
 assert 'name: "TikTok"' in settings.read_text()
 assert 'name: "WhatsApp"' in settings.read_text()
