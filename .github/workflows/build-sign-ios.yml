@@ -3,6 +3,11 @@ name: S4NTOS INJECTOR — iOS build/sign
 on:
   workflow_dispatch:
     inputs:
+      bundle_id:
+        description: "Bundle ID for GBox/ESign signing (default: com.s4ntos.injector)"
+        required: false
+        default: "com.s4ntos.injector"
+        type: string
       kit_url:
         description: "Optional HTTPS URL to download the branding kit ZIP instead of committing it"
         required: false
@@ -11,6 +16,8 @@ on:
     branches: [main]
     paths:
       - "S4NTOS_INJECTOR_kit_para_GitHub.zip"
+      - ".github/workflows/build-sign-ios.yml"
+      - "scripts/**"
 
 permissions:
   contents: read
@@ -65,6 +72,8 @@ jobs:
           echo "KIT_ROOT=$RUNNER_TEMP/santos-kit" >> "$GITHUB_ENV"
 
       - name: Compile new Assets.car and splash
+        env:
+          IPA_BUNDLE_ID: ${{ inputs.bundle_id || 'com.s4ntos.injector' }}
         shell: bash
         run: |
           bash scripts/compile_ipa.sh \
@@ -89,6 +98,7 @@ jobs:
           orig=load(sys.argv[1]); new=load(sys.argv[2])
           p=new[0]
           assert p['CFBundleDisplayName']=='S4NTOS INJECTOR'
+          assert p['CFBundleIdentifier']=='com.s4ntos.injector' or (p['CFBundleIdentifier'] != 'com.apple.mobile.MobileHouseArrest' and '.' in p['CFBundleIdentifier'])
           assert p['UILaunchScreen']['UIImageName']=='S4NTOSLaunch'
           assert p['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName']=='AppIcon'
           assert orig[1]==new[1], 'Executable has been altered'
