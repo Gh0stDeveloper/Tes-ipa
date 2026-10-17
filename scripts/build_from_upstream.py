@@ -154,8 +154,12 @@ for lang in ("en", "vi", "zh-Hans"):
         pattern = re.compile(r'(?m)^(\s*"' + re.escape(key) + r'"\s*=\s*)"((?:\\.|[^"\\])*)";')
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         text, count = pattern.subn(lambda m: m.group(1) + '"' + escaped + '";', text)
-        if count != 1:
-            raise SystemExit(f"Localizable key {key} missing/duplicate in {lang}")
+        if count == 0:
+            # Older upstream versions do not contain every key in the 2.1 IPA.
+            # AppLanguage uses Localizable.strings; adding a key is safe here.
+            text += '\n"' + key + '" = "' + escaped + '";\n'
+        elif count != 1:
+            raise SystemExit(f"Duplicate Localizable key {key} in {lang}")
     f.write_text(text, encoding="utf-8")
 
 assert 'name: "TikTok"' in settings.read_text()
