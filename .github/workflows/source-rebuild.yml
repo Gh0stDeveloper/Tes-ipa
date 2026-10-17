@@ -125,6 +125,34 @@ jobs:
           (cd "$RUNNER_TEMP/package" && zip -qry "$RUNNER_TEMP/S4NTOS_INJECTOR_v2.2.0_UNSIGNED.ipa" Payload)
           unzip -tq "$RUNNER_TEMP/S4NTOS_INJECTOR_v2.2.0_UNSIGNED.ipa"
 
+      - name: Generate isolated test IPA to rule out cached installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -R "$RUNNER_TEMP/package" "$RUNNER_TEMP/package-isolated"
+          python3 - "$RUNNER_TEMP/package-isolated/Payload/3105.app/Info.plist" <<'PY'
+          import plistlib, sys
+          path = sys.argv[1]
+          with open(path, 'rb') as f:
+              p = plistlib.load(f)
+          p['CFBundleIdentifier'] = 'com.s4ntos.injector.v2test'
+          p['CFBundleDisplayName'] = 'S4NTOS V2 TEST'
+          p['CFBundleName'] = 'S4NTOS V2 TEST'
+          p['S4NTOSBuildMarker'] = 'S4NTOS-V2-ISOLATED-2.2.0'
+          with open(path, 'wb') as f:
+              plistlib.dump(p, f, fmt=plistlib.FMT_BINARY)
+          PY
+          (cd "$RUNNER_TEMP/package-isolated" && zip -qry "$RUNNER_TEMP/S4NTOS_V2_TEST_UNSIGNED.ipa" Payload)
+          unzip -tq "$RUNNER_TEMP/S4NTOS_V2_TEST_UNSIGNED.ipa"
+
+      - name: Upload separately installable diagnostic IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: S4NTOS-V2-TEST-SEPARADO
+          path: ${{ runner.temp }}/S4NTOS_V2_TEST_UNSIGNED.ipa
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Upload source-built unsigned IPA for GBox/ESign
         uses: actions/upload-artifact@v4
         with:
