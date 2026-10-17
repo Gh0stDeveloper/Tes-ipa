@@ -27,6 +27,9 @@ APP="${apps[0]}"
 
 # Remove stale signature; any bundle resource modification invalidates it.
 rm -rf "$APP/_CodeSignature" "$APP/embedded.mobileprovision"
+# The original com.apple.mobile.* bundle identifier is Apple-reserved.
+# GBox/ESign should receive a unique identifier so they can sign it as a third-party app.
+export IPA_BUNDLE_ID="${IPA_BUNDLE_ID:-com.s4ntos.injector}"
 xcrun actool --compile "$APP" \
   --platform iphoneos \
   --minimum-deployment-target 16.0 \
@@ -38,7 +41,7 @@ xcrun actool --compile "$APP" \
 
 [[ -s "$APP/Assets.car" ]] || { echo "actool did not produce Assets.car" >&2; exit 1; }
 python3 - "$APP/Info.plist" "$WORK/AssetCatalogInfo.plist" <<'PY'
-import plistlib, sys
+import os, plistlib, re, sys
 info_path, partial_path = sys.argv[1:]
 with open(info_path, 'rb') as f:
     info = plistlib.load(f)
@@ -50,6 +53,12 @@ for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
     else:
         icons = info.setdefault(key, {})
         icons['CFBundlePrimaryIcon'] = {'CFBundleIconName':'AppIcon'}
+bundle_id=os.environ['IPA_BUNDLE_ID']
+if not re.fullmatch(r'[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+',bundle_id):
+    raise SystemExit('Invalid IPA_BUNDLE_ID format')
+if bundle_id.lower().startswith(('com.apple.', 'apple.')):
+    raise SystemExit('Apple-reserved bundle identifier is not allowed')
+info['CFBundleIdentifier'] = bundle_id
 info['CFBundleDisplayName'] = 'S4NTOS INJECTOR'
 info['CFBundleName'] = 'S4NTOS INJECTOR'
 info['UILaunchScreen'] = {
