@@ -22,6 +22,20 @@ Sube **`S4NTOS_INJECTOR_kit_para_GitHub.zip`** a la raíz de este repositorio. E
 
 El workflow compila `Assets.car` con Xcode, actualiza las referencias de icono y splash, reempaqueta el IPA, verifica el ejecutable y realiza `codesign` si hay firma.
 
+## Instalación con GBox o ESign (sin cuenta Apple Developer)
+
+La modalidad principal de este repositorio es **IPA sin firmar**, lista para importar a GBox o ESign y firmar **en el dispositivo**. El runner de GitHub no puede firmar por esas herramientas.
+
+1. Abre [Actions](https://github.com/Gh0stDeveloper/Tes-ipa/actions/workflows/build-sign-ios.yml), entra a la última ejecución y confirma que **Compile catalog and optionally sign IPA** terminó en verde.
+2. Descarga el artefacto **S4NTOS-INJECTOR-unsigned** y **descomprime el ZIP que entrega GitHub**: adentro está `S4NTOS_INJECTOR_compiled_unsigned.ipa`.
+3. Importa ese archivo **.ipa** en GBox o ESign, y selecciona su función de firma. Necesitas un certificado/perfil **válido y compatible** con la distribución a tu dispositivo; usar esas aplicaciones no equivale a disponer de una firma aceptada por iOS.
+4. Firma e instala; sigue solo las instrucciones de confianza/administración de dispositivos de iOS correspondientes a **tu** certificado. Si iOS rechaza la firma, está revocada o no incluye tu dispositivo, necesitarás otra firma válida.
+5. Comprueba en el iPhone: nombre, icono, splash y que la aplicación arranque y conserve sus funciones.
+
+**Bundle identifier:** la compilación cambia el identificador reservado `com.apple.mobile.MobileHouseArrest` por `com.s4ntos.injector`. En la ejecución manual del workflow puedes modificar el campo `bundle_id`. Como el ejecutable original incluye referencias al identificador anterior, **no se garantiza que todas sus funciones operen después del cambio**. Un IPA compilado o firmado no es lo mismo que una app probada en un iPhone.
+
+**Privacidad y seguridad:** utiliza certificados y herramientas de firma de procedencia confiable. No compartas tu Apple ID, contraseñas, certificados privados o perfiles en el repositorio ni los introduzcas en servicios que no sean de tu confianza.
+
 ## Configuración de firma
 
 En **Settings → Secrets and variables → Actions → New repository secret**, crea los siguientes secretos:
@@ -35,7 +49,7 @@ En **Settings → Secrets and variables → Actions → New repository secret**,
 
 El **perfil y certificado deben corresponder a un mismo equipo de desarrollo**. El perfil debe permitir instalar en el dispositivo; con **Ad Hoc** o desarrollo, los UDID de los iPhone deben estar incluidos. Un certificado de distribución App Store no convierte un IPA en instalable por sideloading.
 
-El IPA original indica el identificador reservado `com.apple.mobile.MobileHouseArrest`. La fase de firma reemplaza ese identificador por el autorizado en el perfil, sin modificar el ejecutable. Si la app depende de ese ID a nivel interno, puede no funcionar. No se sortean controles de seguridad ni activación.
+El IPA original indica el identificador reservado `com.apple.mobile.MobileHouseArrest`. La compilación lo sustituye por `com.s4ntos.injector` (configurable); la fase opcional de firma puede cambiarlo de nuevo al ID autorizado por el perfil, sin modificar el ejecutable. Si la app depende de ese ID a nivel interno, puede no funcionar. No se sortean controles de seguridad ni activación.
 
 **No subas claves privadas, contraseñas ni .mobileprovision al repositorio.**
 
