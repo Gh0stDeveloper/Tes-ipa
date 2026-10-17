@@ -2,6 +2,12 @@ name: S4NTOS INJECTOR — Source rebuild (experimental)
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/build_from_upstream.py"
+      - ".github/workflows/source-rebuild.yml"
+      - "docs/SOURCE_REBUILD.md"
   push:
     branches: [feat/s4ntos-v2-source]
     paths:
