@@ -48,11 +48,12 @@ with open(info_path, 'rb') as f:
 with open(partial_path, 'rb') as f:
     partial = plistlib.load(f)
 for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
-    if key in partial:
-        info[key] = partial[key]
-    else:
-        icons = info.setdefault(key, {})
-        icons['CFBundlePrimaryIcon'] = {'CFBundleIconName':'AppIcon'}
+    icons = dict(partial.get(key, {}))
+    primary = dict(icons.get('CFBundlePrimaryIcon', {}))
+    primary['CFBundleIconName'] = 'AppIcon'
+    primary.pop('CFBundleIconFiles', None)
+    icons['CFBundlePrimaryIcon'] = primary
+    info[key] = icons
 bundle_id=os.environ['IPA_BUNDLE_ID']
 if not re.fullmatch(r'[A-Za-z0-9-]+(?:[.][A-Za-z0-9-]+)+', bundle_id):
     raise SystemExit('Invalid IPA_BUNDLE_ID format')
