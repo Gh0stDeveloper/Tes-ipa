@@ -162,5 +162,11 @@ assert 'name: "TikTok"' in settings.read_text()
 assert 'name: "WhatsApp"' in settings.read_text()
 assert 'name: "Discord"' in settings.read_text()
 assert 'name: "Telegram"' in settings.read_text()
-assert 'ForEach(packages)' not in repository.read_text().split("struct RepositoryNewView")[1].split("struct ", 1)[0] or True  # View body rewritten independently
+for view, title in (("RepositoryHomeView", '"S4NTOS INJECTOR"'), ("RepositoryNewView", 'language.text("tab.new")')):
+    section = repository.read_text().split(f"struct {view}: View {{", 1)[1]
+    body = section.split("    var body: some View {", 1)[1].split("    private var ", 1)[0]
+    if '.navigationTitle(' + title + ')' not in body:
+        raise SystemExit(f"Missing navigation title in {view}")
+    if "ForEach(" in body or "rebuildFeed()" in body or "rebuildPackages()" in body:
+        raise SystemExit(f"Feed contents still visible in {view}")
 print("S4NTOS source rebranding, contacts, and empty Home/New applied")
