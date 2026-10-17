@@ -1,0 +1,136 @@
+name: S4NTOS INJECTOR — iOS build/sign
+
+on:
+  workflow_dispatch:
+    inputs:
+      kit_url:
+        description: "Optional HTTPS URL to download the branding kit ZIP instead of committing it"
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "S4NTOS_INJECTOR_kit_para_GitHub.zip"
+      - ".github/workflows/build-sign-ios.yml"
+      - "scripts/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: santos-ios-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Compile catalog and optionally sign IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout trusted build scripts
+        uses: actions/checkout@v4
+
+      - name: Locate or download branding kit
+        env:
+          KIT_URL: ${{ inputs.kit_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/santos-kit"
+          if [[ -n "${KIT_URL:-}" ]]; then
+            [[ "$KIT_URL" == https://* ]] || { echo "::error::The input URL must use HTTPS"; exit 1; }
+            curl --fail --location --silent --show-error --retry 2 --max-time 300 \
+              --proto '=https' --tlsv1.2 "$KIT_URL" -o "$RUNNER_TEMP/santos-kit.zip"
+          elif [[ -f S4NTOS_INJECTOR_kit_para_GitHub.zip ]]; then
+            cp S4NTOS_INJECTOR_kit_para_GitHub.zip "$RUNNER_TEMP/santos-kit.zip"
+          else
+            echo "::error::Upload S4NTOS_INJECTOR_kit_para_GitHub.zip to the repository, or specify kit_url when starting this workflow."
+            exit 1
+          fi
+          unzip -tq "$RUNNER_TEMP/santos-kit.zip" >/dev/null
+          python3 - "$RUNNER_TEMP/santos-kit.zip" <<'PY'
+          import sys, zipfile, pathlib
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              entries=z.infolist()
+              if len(entries)>200 or sum(x.file_size for x in entries)>120_000_000:
+                  raise SystemExit('Unsafe/oversized kit')
+              for item in entries:
+                  p=pathlib.PurePosixPath(item.filename)
+                  if p.is_absolute() or '..' in p.parts or (item.external_attr >> 16) & 0o170000 == 0o120000:
+                      raise SystemExit('Unexpected path or symlink in kit')
+              for path in ('S4NTOS_INJECTOR_unsigned.ipa','Assets.xcassets/AppIcon.appiconset/Contents.json',
+                           'Assets.xcassets/S4NTOSLaunch.imageset/Contents.json'):
+                  if path not in z.namelist():
+                      raise SystemExit('Missing kit asset: '+path)
+          PY
+          unzip -q "$RUNNER_TEMP/santos-kit.zip" -d "$RUNNER_TEMP/santos-kit"
+          echo "KIT_ROOT=$RUNNER_TEMP/santos-kit" >> "$GITHUB_ENV"
+
+      - name: Compile new Assets.car and splash
+        shell: bash
+        run: |
+          bash scripts/compile_ipa.sh \
+            "$KIT_ROOT/Assets.xcassets" \
+            "$KIT_ROOT/S4NTOS_INJECTOR_unsigned.ipa" \
+            "$RUNNER_TEMP/S4NTOS_INJECTOR_compiled_unsigned.ipa"
+
+      - name: Validate branding and executable
+        shell: bash
+        run: |
+          python3 - "$KIT_ROOT/S4NTOS_INJECTOR_unsigned.ipa" "$RUNNER_TEMP/S4NTOS_INJECTOR_compiled_unsigned.ipa" <<'PY'
+          import sys, zipfile, plistlib, hashlib
+          def load(p):
+              with zipfile.ZipFile(p) as z:
+                  names=z.namelist()
+                  app=[v for v in names if v.startswith("Payload/") and v.endswith(".app/Info.plist")]
+                  if len(app)!=1: raise Exception("Expected exactly one iOS .app")
+                  root=app[0][:-len("Info.plist")]
+                  info=plistlib.loads(z.read(app[0]))
+                  executable=z.read(root+info["CFBundleExecutable"])
+                  return (info, hashlib.sha256(executable).digest(), z.read(root+"Assets.car"))
+          orig=load(sys.argv[1]); new=load(sys.argv[2])
+          p=new[0]
+          assert p['CFBundleDisplayName']=='S4NTOS INJECTOR'
+          assert p['UILaunchScreen']['UIImageName']=='S4NTOSLaunch'
+          assert p['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName']=='AppIcon'
+          assert orig[1]==new[1], 'Executable has been altered'
+          assert orig[2]!=new[2], 'Asset catalog has not changed'
+          print("Branding checks and Mach-O parity: OK")
+          PY
+
+      - name: Upload compiled unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: S4NTOS-INJECTOR-unsigned
+          path: ${{ runner.temp }}/S4NTOS_INJECTOR_compiled_unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Sign for Apple-authorized devices when secrets exist
+        id: sign
+        env:
+          IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${IOS_P12_BASE64:-}" || -z "${IOS_P12_PASSWORD:-}" || -z "${IOS_PROFILE_BASE64:-}" ]]; then
+            echo "::notice::Apple signing secrets not configured; unsigned artifact only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bash scripts/sign_ipa.sh \
+            "$RUNNER_TEMP/S4NTOS_INJECTOR_compiled_unsigned.ipa" \
+            "$RUNNER_TEMP/S4NTOS_INJECTOR_signed.ipa"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed IPA
+        if: steps.sign.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: S4NTOS-INJECTOR-signed
+          path: ${{ runner.temp }}/S4NTOS_INJECTOR_signed.ipa
+          if-no-files-found: error
+          retention-days: 7
