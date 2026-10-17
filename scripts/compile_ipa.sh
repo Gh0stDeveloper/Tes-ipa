@@ -54,7 +54,7 @@ for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
         icons = info.setdefault(key, {})
         icons['CFBundlePrimaryIcon'] = {'CFBundleIconName':'AppIcon'}
 bundle_id=os.environ['IPA_BUNDLE_ID']
-if not re.fullmatch(r'[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+',bundle_id):
+if not re.fullmatch(r'[A-Za-z0-9-]+(?:[.][A-Za-z0-9-]+)+', bundle_id):
     raise SystemExit('Invalid IPA_BUNDLE_ID format')
 if bundle_id.lower().startswith(('com.apple.', 'apple.')):
     raise SystemExit('Apple-reserved bundle identifier is not allowed')
