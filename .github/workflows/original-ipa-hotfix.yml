@@ -96,6 +96,8 @@ jobs:
                   data=plistlib.loads(result.read(path+language+'.lproj/Localizable.strings'))
                   assert data['settings.about'].endswith('S4NTOS INJECTOR')
               assert result.testzip() is None
+              executable_mode = result.getinfo(path+'3105').external_attr >> 16
+              assert executable_mode & 0o111, 'Main Mach-O lost executable permissions'
               print('PASS: rebuilt IPA uses original 2.1 Beta 2 executable (one exact-length URL change only)')
               print('PASS: version 2.2.1 build 2201 and previously customized branding')
           PY
