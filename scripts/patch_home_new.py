@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Suppress package/advertisement feeds in Home and New of the original IPA.
+"""Safely suppress package feeds in Home and New of the original IPA.
 
 Requires the exact original 2.1 Beta 2 executable with previously approved
 S4NTOS contacts; patches ONLY two Swift ARM64 repository feed-policy functions.
-Sources, Installed, Files, updater, version and app identifier stay unchanged.
+Sources, Installed, Files, updater, version and app identifier stay unchanged.\nThe incoming Swift Array is borrowed; it must NOT be released here.
 """
 import hashlib
 import plistlib
@@ -14,18 +14,12 @@ from pathlib import Path
 
 BASE = 0x100000000
 EXPECTED_SHA = "aee526022d04fc0bd091d50f146f0b336cbd2261e61cbc13fa9602ee6e0617ea"
-SWIFT_RELEASE_STUB = 0x10058fc44
 EMPTY_ARRAY_GOT = 0x1006bbdb0
 APP = "Payload/3105.app/"
 FUNCTIONS = {
     "Home": (0x1002e0fe4, (0xd100c3ff, 0xa9014ff4, 0xa9027bfd, 0x910083fd)),
     "New": (0x1002e1068, (0xd10103ff, 0xa90157f6, 0xa9024ff4, 0xa9037bfd)),
 }
-
-def branch_to(pc, dest):
-    delta = dest - pc
-    assert delta % 4 == 0 and -(1 << 27) <= delta < (1 << 27)
-    return 0x94000000 | ((delta >> 2) & 0x3ffffff)
 
 def got_page(reg, pc, target):
     delta = (target >> 12) - (pc >> 12)
@@ -41,23 +35,21 @@ def patch_exe(before):
     for screen, (address, original) in FUNCTIONS.items():
         offset = address - BASE
         assert struct.unpack_from("<4I", data, offset) == original, screen
-        # Input x0 is the retained Swift Array storage from RepositoryStore.
-        # Release the original array (+1); then return Swift's immortal shared
-        # empty-array storage in x0. No stored sources/packages are mutated.
+        # Swift's incoming Array parameter is borrowed (+0), not owned (+1).
+        # The previous patch called swift_release(x0), over-releasing a
+        # reference that remains owned by the repository store. That could
+        # deallocate the array and crash SwiftUI on launch/refesh.
+        # Return the existing immortal Swift empty-array singleton directly.
+        # No calls, no stack frame, no ARC operations: exactly 3 instructions.
         patch = [
-            0xd10043ff,                                   # sub sp,sp,#16
-            0xf90003fe,                                   # str x30,[sp]
-            branch_to(address + 8, SWIFT_RELEASE_STUB),   # bl swift_release
-            got_page(8, address + 12, EMPTY_ARRAY_GOT),   # adrp x8, __swiftEmptyArrayStorage@gotpage
-            0xf9400000 | ((0xdb0 // 8) << 10) | (8 << 5),  # ldr x0,[x8,#0xdb0]
-            0xf94003fe,                                   # ldr x30,[sp]
-            0x910043ff,                                   # add sp,sp,#16
-            0xd65f03c0,                                   # ret
+            got_page(0, address, EMPTY_ARRAY_GOT),        # adrp x0, GOT page
+            0xf9400000 | ((0xdb0 // 8) << 10),           # ldr x0, [x0,#0xdb0]
+            0xd65f03c0,                                  # ret
         ]
-        struct.pack_into("<8I", data, offset, *patch)
-        assert struct.unpack_from("<8I", data, offset) == tuple(patch)
-        allowed.update(range(offset, offset + 32))
-        print(f"{screen}: patched 32 instruction bytes at {offset:#x}")
+        struct.pack_into("<3I", data, offset, *patch)
+        assert struct.unpack_from("<3I", data, offset) == tuple(patch)
+        allowed.update(range(offset, offset + 12))
+        print(f"{screen}: patched only 3 ARM64 instructions at {offset:#x}, without swift_release")
     changes = {i for i, (a, b) in enumerate(zip(before, data)) if a != b}
     if not changes or not changes.issubset(allowed) or len(data) != len(before):
         raise ValueError("Executable modified outside two Home/New feed-policy functions")
