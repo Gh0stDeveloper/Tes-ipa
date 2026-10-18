@@ -10,7 +10,7 @@ Este cambio parte **solo** de la aplicación del cliente `SantosXit🍎_vsAlta.i
 - **About**: conservados los contactos de S4NTOS del parche anterior.
 - **Icono y splash**: el catálogo de imágenes aprobado anteriormente se recompila con Xcode.
 
-El parche ARM64 revisa primero el SHA-256 exacto del ejecutable 2.1 Beta 2 ya personalizado y los prólogos de las dos funciones. Solo sustituye 8 instrucciones en cada función, liberando el arreglo de entrada y devolviendo la instancia compartida vacía de Swift. Si cambia la versión binaria, el parche falla en vez de modificar offsets sin verificar.
+El parche ARM64 revisa primero el SHA-256 exacto del ejecutable 2.1 Beta 2 ya personalizado y los prólogos de las dos funciones. Solo sustituye **3 instrucciones ARM64** en cada función: carga el arreglo vacío compartido de Swift y retorna sin liberar ni modificar el arreglo de entrada. **Corrección de un fallo anterior:** el parche de la ejecución #39086644532 llamaba erróneamente a `swift_release` sobre un argumento prestado. Esa liberación indebida puede causar un cierre por acceso a memoria liberada; dicha versión está descartada y no debe instalarse. Si cambia la versión binaria, el parche falla en vez de modificar offsets sin verificar.
 
 ## Qué sigue intacto
 
@@ -18,6 +18,12 @@ El parche ARM64 revisa primero el SHA-256 exacto del ejecutable 2.1 Beta 2 ya pe
 - Bundle ID `com.apple.mobile.MobileHouseArrest`.
 - Comprobador de actualizaciones original y URLs del catálogo.
 - Motores de compatibilidad iOS, permisos y restantes funciones.
+
+## Qué se corrigió respecto a la compilación que se cerraba
+
+La compilación previa forzaba `swift_release(x0)` al entrar en las funciones Home y New. El código Swift original recibe el arreglo sin transferir propiedad; liberarlo puede reducir su contador de referencias indebidamente y provocar un fallo al usarlo en otra parte. El parche nuevo **no realiza ninguna llamada a la gestión de memoria ARC**. Dos conjuntos de **12 bytes cada uno** sustituyen el inicio de las dos funciones; el workflow verifica las instrucciones exactas y que no haya ninguna otra diferencia en el ejecutable, comparándolo con el IPA anterior que sí abría.
+
+La ausencia de un reporte `.ips` impide afirmar que esta sea la única causa del cierre. El resultado de compilación no sustituye una prueba de apertura en un iPhone real.
 
 ## Límites visuales y pruebas
 
