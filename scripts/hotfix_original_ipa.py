@@ -65,6 +65,9 @@ def main() -> None:
             raise SystemExit("Mach-O length changed")
         assert after.replace(NO_LEGACY_UPDATES, ORIGINAL_UPDATE) == before
         exe.write_bytes(after)
+        # ZipFile.extractall does not preserve UNIX executable bits.
+        # iOS requires the Mach-O file to be executable after re-signing.
+        exe.chmod(0o755)
         # Keep the tested independent app ID. Never change the original
         # com.apple.mobile.* identifier or other private system entitlements.
         if info.get("CFBundleIdentifier") != BUNDLE_ID:
