@@ -1,0 +1,135 @@
+name: S4NTOS INJECTOR - Original Beta 2 - SAFE Home and New
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/original-home-new-empty]
+    paths: ['scripts/patch_original_only.py','scripts/patch_home_new.py','.github/workflows/build-original-only.yml','docs/ORIGINAL_ONLY.md','docs/HOME_NEW_PATCH.md']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  original-only:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read first kit from this repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -tq S4NTOS_INJECTOR_kit_para_GitHub.zip
+          mkdir -p "$RUNNER_TEMP/kit"
+          unzip -q S4NTOS_INJECTOR_kit_para_GitHub.zip \
+            'S4NTOS_INJECTOR_unsigned.ipa' 'Assets.xcassets/*' -d "$RUNNER_TEMP/kit"
+      - name: Patch only About of original executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_original_only.py \
+            "$RUNNER_TEMP/kit/S4NTOS_INJECTOR_unsigned.ipa" \
+            "$RUNNER_TEMP/about-patched.ipa"
+      - name: Hide Home and New package listings (original binary only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_home_new.py \
+            "$RUNNER_TEMP/about-patched.ipa" \
+            "$RUNNER_TEMP/home-new-patched.ipa"
+      - name: Compile previously approved icon and launch screen
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pkg"
+          unzip -q "$RUNNER_TEMP/home-new-patched.ipa" -d "$RUNNER_TEMP/pkg"
+          APP="$RUNNER_TEMP/pkg/Payload/3105.app"
+          chmod 755 "$APP/3105"
+          rm -rf "$APP/_CodeSignature"
+          rm -f "$APP/embedded.mobileprovision"
+          xcrun actool --compile "$APP" \
+            --platform iphoneos --minimum-deployment-target 16.0 \
+            --target-device iphone --target-device ipad \
+            --app-icon AppIcon --output-partial-info-plist "$RUNNER_TEMP/AssetInfo.plist" \
+            "$RUNNER_TEMP/kit/Assets.xcassets"
+          test -s "$APP/Assets.car"
+          python3 - "$APP/Info.plist" "$RUNNER_TEMP/AssetInfo.plist" <<'PY'
+          import plistlib,sys
+          p,info=sys.argv[1:]
+          with open(p,'rb') as f:data=plistlib.load(f)
+          with open(info,'rb') as f:icons=plistlib.load(f)
+          for key in ("CFBundleIcons","CFBundleIcons~ipad"):
+              val=icons.get(key,data.get(key,{}))
+              primary=val.get("CFBundlePrimaryIcon",{})
+              primary["CFBundleIconName"]="AppIcon"
+              val["CFBundlePrimaryIcon"]=primary
+              data[key]=val
+          data["CFBundleName"]=data["CFBundleDisplayName"]="S4NTOS INJECTOR"
+          data["UILaunchScreen"]={"UIImageName":"S4NTOSLaunch",
+              "UIColorName":"S4NTOSBackground","UIImageRespectsSafeAreaInsets":False}
+          with open(p,'wb') as f:plistlib.dump(data,f,fmt=plistlib.FMT_BINARY)
+          PY
+          (cd "$RUNNER_TEMP/pkg" && zip -qry "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa" Payload)
+      - name: Verify version, binary contacts, and unchanged update/catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/kit/S4NTOS_INJECTOR_unsigned.ipa" \
+            "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa" \
+            "$RUNNER_TEMP/about-patched.ipa" <<'PY'
+          import hashlib,plistlib,sys,zipfile,struct
+          app="Payload/3105.app/"
+          with zipfile.ZipFile(sys.argv[1]) as src,zipfile.ZipFile(sys.argv[2]) as result:
+              old=src.read(app+"3105");exe=result.read(app+"3105")
+              p=plistlib.loads(result.read(app+"Info.plist"))
+              assert hashlib.sha256(old).hexdigest()=="d5b95ed6ce634cb5f8f8734f31e4a83212a3341ad59389706482a796cdfbab7b"
+              assert len(old)==len(exe)==19771976
+              for k,v in (("CFBundleIdentifier","com.apple.mobile.MobileHouseArrest"),
+                ("CFBundleShortVersionString","2.1"),("CFBundleVersion","2"),
+                ("AppReleaseDisplayVersion","2.1 Beta 2"),("CFBundleDisplayName","S4NTOS INJECTOR")):
+                  assert p[k]==v,(k,p[k])
+              for keep in (b"https://api.github.com/repos/YangJiiii/3105/releases/latest",
+                           b"https://raw.githubusercontent.com/YangJiiii/3105-repo/main/sources.json"):
+                  assert old.count(keep)==exe.count(keep)==1
+              for url in (b"https://wa.me/573505589046",
+                          b"https://discord.gg/b6xnTpUK5w",
+                          b"https://tiktok.com/@s4ntosxiter1",
+                          b"https://t.me/S4ntosOWNER"):
+                  assert url in exe,url
+              for l in ("en","vi","zh-Hans"):
+                  labels=plistlib.loads(result.read(app+l+".lproj/Localizable.strings"))
+                  assert labels["social.github_role"]=="@s4ntosxiter1"
+                  assert labels["credit.yangjiii"]=="+57 350 558 9046"
+              assert result.getinfo(app+"3105").external_attr>>16 & 0o111
+              assert result.testzip() is None
+              print("PASS original executable/identity/version/updater preserved; About updated")
+              # Crash regression: previous build called swift_release on
+              # a borrowed Swift Array, which can cause use-after-free.
+              # The fix is exactly: adrp x0, GOT; ldr x0, [x0, #0xdb0]; ret.
+              expected={
+                  0x2e0fe4: (0xf0001ec0, 0xf946d800, 0xd65f03c0),
+                  0x2e1068: (0xd0001ec0, 0xf946d800, 0xd65f03c0),
+              }
+              with zipfile.ZipFile(sys.argv[3]) as previous:
+                  approved=previous.read(app+"3105")
+              assert hashlib.sha256(approved).hexdigest()=="aee526022d04fc0bd091d50f146f0b336cbd2261e61cbc13fa9602ee6e0617ea"
+              changed={i for i,(x,y) in enumerate(zip(approved,exe)) if x!=y}
+              allowed=set()
+              for offset, opcode in expected.items():
+                  assert struct.unpack_from('<3I',exe,offset)==opcode, hex(offset)
+                  allowed.update(range(offset,offset+12))
+              assert changed and changed <= allowed and len(exe)==len(approved), "Unapproved binary mutation"
+              # Explicitly require no stack manipulation, no ARC release,
+              # no branch-with-link in patched Home and New entry points.
+              for offset in expected:
+                  words=struct.unpack_from('<3I',exe,offset)
+                  assert words[2]==0xd65f03c0
+                  assert all((w & 0xfc000000)!=0x94000000 for w in words)
+              print("PASS: only 3 instructions per function, no swift_release, no extra mutations")
+              print("Important: actual iOS launch still needs physical-device testing")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: S4NTOS-ORIGINAL-BETA2-HOME-NEW-ARC-SAFE
+          path: ${{ runner.temp }}/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa
+          retention-days: 7
+          if-no-files-found: error
