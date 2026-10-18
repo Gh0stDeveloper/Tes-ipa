@@ -1,4 +1,4 @@
-name: S4NTOS INJECTOR - Original 2.1 Beta 2 - Home and New
+name: S4NTOS INJECTOR - Original Beta 2 - SAFE Home and New
 on:
   workflow_dispatch:
   push:
@@ -68,14 +68,15 @@ jobs:
               "UIColorName":"S4NTOSBackground","UIImageRespectsSafeAreaInsets":False}
           with open(p,'wb') as f:plistlib.dump(data,f,fmt=plistlib.FMT_BINARY)
           PY
-          (cd "$RUNNER_TEMP/pkg" && zip -qry "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_Home_New.ipa" Payload)
+          (cd "$RUNNER_TEMP/pkg" && zip -qry "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa" Payload)
       - name: Verify version, binary contacts, and unchanged update/catalog
         shell: bash
         run: |
           set -euo pipefail
           python3 - "$RUNNER_TEMP/kit/S4NTOS_INJECTOR_unsigned.ipa" \
-            "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_Home_New.ipa" <<'PY'
-          import hashlib,plistlib,sys,zipfile
+            "$RUNNER_TEMP/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa" \
+            "$RUNNER_TEMP/about-patched.ipa" <<'PY'
+          import hashlib,plistlib,sys,zipfile,struct
           app="Payload/3105.app/"
           with zipfile.ZipFile(sys.argv[1]) as src,zipfile.ZipFile(sys.argv[2]) as result:
               old=src.read(app+"3105");exe=result.read(app+"3105")
@@ -101,15 +102,34 @@ jobs:
               assert result.getinfo(app+"3105").external_attr>>16 & 0o111
               assert result.testzip() is None
               print("PASS original executable/identity/version/updater preserved; About updated")
-              import struct
-              for addr in (0x2e0fe4,0x2e1068):
-                  words=struct.unpack_from('<8I',exe,addr)
-                  assert words[0]==0xd10043ff and words[1]==0xf90003fe and words[7]==0xd65f03c0
-              print("PASS exact ARM64 Home/New feed policies return empty arrays")
+              # Crash regression: previous build called swift_release on
+              # a borrowed Swift Array, which can cause use-after-free.
+              # The fix is exactly: adrp x0, GOT; ldr x0, [x0, #0xdb0]; ret.
+              expected={
+                  0x2e0fe4: (0xf0001ec0, 0xf946d800, 0xd65f03c0),
+                  0x2e1068: (0xd0001ec0, 0xf946d800, 0xd65f03c0),
+              }
+              with zipfile.ZipFile(sys.argv[3]) as previous:
+                  approved=previous.read(app+"3105")
+              assert hashlib.sha256(approved).hexdigest()=="aee526022d04fc0bd091d50f146f0b336cbd2261e61cbc13fa9602ee6e0617ea"
+              changed={i for i,(x,y) in enumerate(zip(approved,exe)) if x!=y}
+              allowed=set()
+              for offset, opcode in expected.items():
+                  assert struct.unpack_from('<3I',exe,offset)==opcode, hex(offset)
+                  allowed.update(range(offset,offset+12))
+              assert changed and changed <= allowed and len(exe)==len(approved), "Unapproved binary mutation"
+              # Explicitly require no stack manipulation, no ARC release,
+              # no branch-with-link in patched Home and New entry points.
+              for offset in expected:
+                  words=struct.unpack_from('<3I',exe,offset)
+                  assert words[2]==0xd65f03c0
+                  assert all((w & 0xfc000000)!=0x94000000 for w in words)
+              print("PASS: only 3 instructions per function, no swift_release, no extra mutations")
+              print("Important: actual iOS launch still needs physical-device testing")
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: S4NTOS-ORIGINAL-2.1-BETA2-HOME-NEW-EMPTY
-          path: ${{ runner.temp }}/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_Home_New.ipa
+          name: S4NTOS-ORIGINAL-BETA2-HOME-NEW-ARC-SAFE
+          path: ${{ runner.temp }}/S4NTOS_INJECTOR_ORIGINAL_2_1_Beta2_HOME_NEW_SAFE.ipa
           retention-days: 7
           if-no-files-found: error
